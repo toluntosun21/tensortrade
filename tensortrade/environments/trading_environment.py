@@ -332,3 +332,6 @@ class TradingEnvironment(gym.Env, TimeIndexed):
         for renderer in self._renderers:
             if callable(hasattr(renderer, 'close')):
                 renderer.close()  # pylint: disable=no-member
+
+    def set_feed(self, feed):
+        self.feed = feed
