@@ -202,6 +202,8 @@ class A2CAgent(Agent):
             steps_done = 0
             if episode:
                 memory = ReplayMemory(memory_capacity, transition_type=A2CTransition)
+
+            self.env.portfolio.reset()
             print(self.env.portfolio.balances)
 
             print('====      TRAIN EPISODE ID ({}/{}): {}      ===='.format(episode + 1,

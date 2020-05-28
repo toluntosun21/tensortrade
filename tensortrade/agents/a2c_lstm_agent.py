@@ -191,6 +191,9 @@ class A2C_LSTM_Agent(Agent):
             if episode:
                 #self.LSTM.reset_states()
                 memory = ReplayMemory(memory_capacity, transition_type=A2C_LSTM_Transition)
+
+
+            self.env.portfolio.reset()
             print(self.env.portfolio.balances)
             print('====      TRAIN EPISODE ID ({}/{}): {}      ===='.format(episode + 1,
                                                                       n_episodes,
