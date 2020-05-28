@@ -22,10 +22,11 @@ References:
 import random
 import numpy as np
 import tensorflow as tf
-
+import copy
 from collections import namedtuple
 
 from tensortrade.agents import Agent, ReplayMemory
+from tensortrade.data import DataFeed
 
 A2CTransition = namedtuple('A2CTransition', ['state', 'action', 'reward', 'done', 'value'])
 
@@ -34,10 +35,13 @@ class A2CAgent(Agent):
 
     def __init__(self,
                  env: 'TradingEnvironment',
+                 test_env: 'TradingEnvironment' = None,
                  shared_network: tf.keras.Model = None,
                  actor_network: tf.keras.Model = None,
                  critic_network: tf.keras.Model = None):
         self.env = env
+        self.test_env = test_env or copy.deepcopy(env)
+
         self.n_actions = env.action_space.n
         self.observation_shape = env.observation_space.shape
 
@@ -178,6 +182,7 @@ class A2CAgent(Agent):
         eps_decay_steps: int = kwargs.get('eps_decay_steps', 200)
         entropy_c: int = kwargs.get('entropy_c', 0.0001)
         memory_capacity: int = kwargs.get('memory_capacity', 1000)
+        train_end: float = kwargs.get('train_end', 0.3)
 
         memory = ReplayMemory(memory_capacity, transition_type=A2CTransition)
         episode = 0
@@ -191,14 +196,25 @@ class A2CAgent(Agent):
         print('====      AGENT ID: {}      ===='.format(self.id))
 
         while episode < n_episodes and not stop_training:
-            state = self.env.reset()
+            if not episode or not self.env.feed.has_next():
+                state = self.env.reset()
             done = False
+            steps_done = 0
+            if episode:
+                memory = ReplayMemory(memory_capacity, transition_type=A2CTransition)
+            print(self.env.portfolio.balances)
 
-            print('====      EPISODE ID ({}/{}): {}      ===='.format(episode + 1,
+            print('====      TRAIN EPISODE ID ({}/{}): {}      ===='.format(episode + 1,
                                                                       n_episodes,
                                                                       self.env.episode_id))
 
             while not done:
+                if steps_done % 24 == 0: #each day
+                    print("step {}/{}".format(steps_done, n_steps))
+                    print(self.env.portfolio.balances)
+                    print(self.env.portfolio.net_worth)
+                    print('exchange:', state[-1][0])
+
                 threshold = eps_end + (eps_start - eps_end) * np.exp(-steps_done / eps_decay_steps)
                 action = self.get_action(state, threshold=threshold)
                 next_state, reward, done, _ = self.env.step(action)
@@ -212,6 +228,10 @@ class A2CAgent(Agent):
                 total_reward += reward
                 steps_done += 1
 
+                if self.env.portfolio.net_worth < self.env.portfolio.initial_net_worth * train_end:
+                    done = True
+                    continue
+
                 if len(memory) < batch_size:
                     continue
 
@@ -224,6 +244,42 @@ class A2CAgent(Agent):
                 if n_steps and steps_done >= n_steps:
                     done = True
                     stop_training = True
+
+            # VALIDATION
+            test_state = self.test_env.reset()
+            done = False
+            steps_done = 0
+            threshold = 0
+
+            print(self.test_env.portfolio.balances)
+            print('====      TEST EPISODE ID ({}/{}): {}      ===='.format(episode + 1,
+                                                                      n_episodes,
+                                                                      self.test_env.episode_id))
+
+            while not done:
+                if steps_done % 24 == 0: #each day
+                    print("step {}/{}".format(steps_done, n_steps))
+                    print(self.test_env.portfolio.balances)
+                    print(self.test_env.portfolio.net_worth)
+                    print('exchange:', test_state[-1][0])
+
+                if not self.test_env.feed.has_next():
+                    done = True
+                    continue
+
+                action = self.get_action(test_state, threshold=threshold)
+                next_state, reward, done, _ = self.test_env.step(action)
+                value = self.critic_network(test_state[None, :], training=False)
+                value = tf.squeeze(value, axis=-1)
+                test_state = next_state
+                steps_done += 1
+                if self.test_env.portfolio.net_worth < self.test_env.portfolio.initial_net_worth * train_end:
+                    done = True
+                    continue
+
+            portfolio_perf = self.test_env.portfolio.performance.values
+            np.savetxt(save_path+'/test{}.csv'.format(episode+1), portfolio_perf, delimiter=',', fmt='%s')
+
 
             is_checkpoint = save_every and episode % save_every == 0
 

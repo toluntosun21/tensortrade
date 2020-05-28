@@ -15,12 +15,12 @@ class A2C_LSTM_Agent(Agent):
 
     def __init__(self,
                  env: 'TradingEnvironment',
-                 validation_feed: DataFeed = None,
+                 test_env: 'TradingEnvironment' = None,
                  shared_network: tf.keras.Model = None,
                  actor_network: tf.keras.Model = None,
                  critic_network: tf.keras.Model = None):
         self.env = env
-        self.validation_feed = validation_feed or env.feed
+        self.test_env = test_env or copy.deepcopy(env)
         self.n_actions = env.action_space.n
         self.observation_shape = env.observation_space.shape
 
@@ -201,6 +201,7 @@ class A2C_LSTM_Agent(Agent):
                     print("step {}/{}".format(steps_done, n_steps))
                     print(self.env.portfolio.balances)
                     print(self.env.portfolio.net_worth)
+                    print('exchange:', state[-1][0])
 
                 if not self.env.feed.has_next():
                     done = True
@@ -224,7 +225,7 @@ class A2C_LSTM_Agent(Agent):
                 if len(memory) < batch_size:
                     continue
 
-                if steps_done % batch_size == 0:
+                if True or steps_done % batch_size == 0:
                     self._apply_gradient_descent(memory,
                                              batch_size,
                                              learning_rate,
@@ -236,12 +237,8 @@ class A2C_LSTM_Agent(Agent):
                     #stop_training = True
 
             # VALIDATION
-            state = self.env.reset()
-            train_feed = self.env.feed
-            self.env.set_feed(self.validation_feed)
-            self.env.compile()
-            self.env.feed.next()
-            state = self.env.reset()
+
+            test_state = self.test_env.reset()
             self.LSTM.reset_states()
             done = False
             steps_done = 0
@@ -250,34 +247,33 @@ class A2C_LSTM_Agent(Agent):
             print(self.env.portfolio.balances)
             print('====      TEST EPISODE ID ({}/{}): {}      ===='.format(episode + 1,
                                                                       n_episodes,
-                                                                      self.env.episode_id))
+                                                                      self.test_env.episode_id))
 
             while not done:
                 if steps_done % 24 == 0: #each day
                     print("step {}/{}".format(steps_done, n_steps))
-                    print(self.env.portfolio.balances)
-                    print(self.env.portfolio.net_worth)
+                    print(self.test_env.portfolio.balances)
+                    print(self.test_env.portfolio.net_worth)
+                    print('exchange:', test_state[-1][0])
 
-                if not self.env.feed.has_next():
+                if not self.test_env.feed.has_next():
                     done = True
                     continue
 
-                action = self.get_action(state, threshold=threshold)
-                next_state, reward, done, _ = self.env.step(action)
-                value = self.critic_network(state[None, None, :], training=False)
+                action = self.get_action(test_state, threshold=threshold)
+                next_state, reward, done, _ = self.test_env.step(action)
+                value = self.critic_network(test_state[None, None, :], training=False)
                 value = tf.squeeze(value, axis=-1)
-                state = next_state
+                test_state = next_state
                 steps_done += 1
-                if self.env.portfolio.net_worth < self.env.portfolio.initial_net_worth * train_end:
+                if self.test_env.portfolio.net_worth < self.test_env.portfolio.initial_net_worth * train_end:
                     done = True
                     continue
 
-            portfolio_perf = self.env.portfolio.performance.values
+            portfolio_perf = self.test_env.portfolio.performance.values
             np.savetxt(save_path+'/test{}.csv'.format(episode+1), portfolio_perf, delimiter=',', fmt='%s')
 
-            self.env.set_feed(train_feed)
-            self.env.compile()
-            self.env.portfolio.reset()
+
             self.LSTM.reset_states()
 
             is_checkpoint = save_every and episode % save_every == 0
