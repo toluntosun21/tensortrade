@@ -183,6 +183,7 @@ class A2CAgent(Agent):
         entropy_c: int = kwargs.get('entropy_c', 0.0001)
         memory_capacity: int = kwargs.get('memory_capacity', 1000)
         train_end: float = kwargs.get('train_end', 0.3)
+        debug: bool = kwargs.get('debug', False)
 
         memory = ReplayMemory(memory_capacity, transition_type=A2CTransition)
         episode = 0
@@ -211,7 +212,7 @@ class A2CAgent(Agent):
                                                                       self.env.episode_id))
 
             while not done:
-                if steps_done % 24 == 0: #each day
+                if debug or steps_done % 24 == 0: #each day
                     print("step {}/{}".format(steps_done, n_steps))
                     print(self.env.portfolio.balances)
                     print(self.env.portfolio.net_worth)
@@ -221,8 +222,17 @@ class A2CAgent(Agent):
                 action = self.get_action(state, threshold=threshold)
                 next_state, reward, done, _ = self.env.step(action)
 
+
+
+
+
                 value = self.critic_network(state[None, :], training=False)
                 value = tf.squeeze(value, axis=-1)
+                if debug:
+                    print('value:',value)
+                    print('reward:',reward)
+                    print('threshold:',threshold)
+                    print('action:',action)
 
                 memory.push(state, action, reward, done, value)
 
@@ -245,21 +255,20 @@ class A2CAgent(Agent):
 
                 if n_steps and steps_done >= n_steps:
                     done = True
-                    stop_training = True
 
             # VALIDATION
             test_state = self.test_env.reset()
             done = False
             steps_done = 0
-            threshold = 0
+            threshold = 0.1
 
             print(self.test_env.portfolio.balances)
             print('====      TEST EPISODE ID ({}/{}): {}      ===='.format(episode + 1,
                                                                       n_episodes,
                                                                       self.test_env.episode_id))
-
+            reward7_count = 0
             while not done:
-                if steps_done % 24 == 0: #each day
+                if debug or steps_done % 24 == 0: #each day
                     print("step {}/{}".format(steps_done, n_steps))
                     print(self.test_env.portfolio.balances)
                     print(self.test_env.portfolio.net_worth)
@@ -271,10 +280,19 @@ class A2CAgent(Agent):
 
                 action = self.get_action(test_state, threshold=threshold)
                 next_state, reward, done, _ = self.test_env.step(action)
+
+
+
+
                 value = self.critic_network(test_state[None, :], training=False)
                 value = tf.squeeze(value, axis=-1)
                 test_state = next_state
                 steps_done += 1
+                if debug:
+                    print('value:',value)
+                    print('reward:',reward)
+                    print('action:',action)
+
                 if self.test_env.portfolio.net_worth < self.test_env.portfolio.initial_net_worth * train_end:
                     done = True
                     continue

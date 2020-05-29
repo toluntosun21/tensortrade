@@ -237,7 +237,6 @@ class A2C_LSTM_Agent(Agent):
 
                 if n_steps and steps_done >= n_steps:
                     done = True
-                    #stop_training = True
 
             # VALIDATION
 
@@ -245,7 +244,7 @@ class A2C_LSTM_Agent(Agent):
             self.LSTM.reset_states()
             done = False
             steps_done = 0
-            threshold = 0
+            threshold = 0.1
 
             print(self.env.portfolio.balances)
             print('====      TEST EPISODE ID ({}/{}): {}      ===='.format(episode + 1,
